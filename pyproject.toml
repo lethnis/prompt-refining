@@ -1,0 +1,31 @@
+[project]
+name = "prompt-refining"
+version = "0.0.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "datasets>=4.5.0",
+    "dotenv>=0.9.9",
+    "hf-xet>=1.2.0",
+    "langchain>=1.2.9",
+    "langchain-openai>=1.1.7",
+    "langfuse>=3.13.0",
+    "polars>=1.38.1",
+]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "$version"
+version_scheme = "semver2"
+version_provider = "uv"
+update_changelog_on_bump = true
+major_version_zero = true
+
+[dependency-groups]
+dev = [
+    "datamodel-code-generator>=0.53.0",
+    "ipykernel>=7.2.0",
+    "jupyter>=1.1.1",
+    "matplotlib>=3.10.8",
+]
