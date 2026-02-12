@@ -11,51 +11,51 @@ from pydantic import BaseModel, Field, constr
 
 
 class Type(Enum):
-    Указ = 'Указ'
-    Постановление = 'Постановление'
-    Распоряжение = 'Распоряжение'
+    Указ = "Указ"
+    Постановление = "Постановление"
+    Распоряжение = "Распоряжение"
 
 
 class ActInfo(BaseModel):
     full_name: constr(min_length=1) = Field(
         ...,
         description="Полное наименование правового акта, сформированное как '{type} {government_agency_name}'. Пример: 'Указ Президента Российской Федерации'",
-        examples=['Постановление Правительства Российской Федерации'],
-        title='Full Name',
+        examples=["Постановление Правительства Российской Федерации"],
+        title="Full Name",
     )
     publication_date: date = Field(
         ...,
         description="Дата опубликования документа в формате ISO 8601 (ГГГГ-ММ-ДД). Пример: '2000-07-30'",
-        examples=['1997-04-02'],
-        title='Publication Date',
+        examples=["1997-04-02"],
+        title="Publication Date",
     )
-    number: constr(pattern=r'^[0-9]+[а-яА-ЯёЁ-]*$', min_length=1) = Field(
+    number: constr(pattern=r"^[0-9]+[а-яА-ЯёЁ-]*$", min_length=1) = Field(
         ...,
         description="Номер документа, содержащий цифры и возможно буквы/дефис. Примеры: '1406', '669-рп', '433-р'",
-        examples=['331'],
-        title='Number',
+        examples=["331"],
+        title="Number",
     )
     title: constr(min_length=1) = Field(
         ...,
         description="Заголовок документа. Пример: 'О награждении орденом Дружбы Гусарова Е.П.'",
-        examples=['О Суворове А.А.'],
-        title='Title',
+        examples=["О Суворове А.А."],
+        title="Title",
     )
     government_agency_name: constr(min_length=1) = Field(
         ...,
         description="Наименование государственного органа. Пример: 'Президент Российской Федерации'",
-        examples=['Совет Министров - Правительство Российской Федерации'],
-        title='Government Agency Name',
+        examples=["Совет Министров - Правительство Российской Федерации"],
+        title="Government Agency Name",
     )
-    signatory: constr(pattern=r'^[А-Я][а-я]+ [А-Я]\.$', min_length=1) = Field(
+    signatory: constr(pattern=r"^[А-Я][а-я]+ [А-Я]\.$", min_length=1) = Field(
         ...,
         description="Фамилия и инициал подписавшего лица в формате 'Фамилия И.'. Пример: 'Путин В.'",
-        examples=['Черномырдин В.'],
-        title='Signatory',
+        examples=["Черномырдин В."],
+        title="Signatory",
     )
     type: Type = Field(
         ...,
         description="Тип правового акта. Пример: 'Указ'",
-        examples=['Распоряжение'],
-        title='Type',
+        examples=["Распоряжение"],
+        title="Type",
     )

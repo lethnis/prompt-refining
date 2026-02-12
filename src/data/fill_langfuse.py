@@ -4,7 +4,6 @@ from tqdm import tqdm
 
 from src.constants import ActInfo
 
-
 client = get_client()
 dataset = load_from_disk("../data/raw")
 client.create_dataset(name="RusLawOD/train", expected_output_schema=ActInfo.model_json_schema())
