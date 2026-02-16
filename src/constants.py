@@ -36,7 +36,6 @@ class State(TypedDict):
     bad_results: list[BadResult]
     best_test_accuracy: float
     is_test_accuracy_improving: bool
-    best_generation_prompt_version: int
     generation_prompt_client: PromptClient
     refine_prompt_client: PromptClient
     train_dataset_client: DatasetClient

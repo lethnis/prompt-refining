@@ -1,15 +1,19 @@
+import asyncio
+from datetime import datetime
 import random
 from typing import Any
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
+from loguru import logger
 from tqdm import tqdm
 
-from constants import BadResult, State
-from models import refine_model, structured_model
-from src.langfuse_utils import get_generation_prompt_client, get_refine_prompt_client, get_train_test_dataset
+from src.models import refine_model, generation_model
+from src.constants import BadResult, State
+from src.langfuse_utils import get_generation_prompt_client, get_refine_prompt_client, get_train_test_dataset, get_best_generation_prompt_version
 from src.settings import Settings
 
 load_dotenv()
@@ -18,9 +22,45 @@ langfuse_client = get_client()
 callback_handler = CallbackHandler()
 
 
+def main():
+    settings = Settings()
+
+    test_dataset_name = quote(settings.LANGFUSE_TEST_DATASET_NAME, safe="")
+    best_version, best_test_accuracy = asyncio.run(get_best_generation_prompt_version(langfuse_client, test_dataset_name))
+    settings.LANGFUSE_GENERATION_PROMPT_VERSION = best_version
+
+    generation_prompt_client = get_generation_prompt_client(langfuse_client, settings)
+    refine_prompt_client = get_refine_prompt_client(langfuse_client, settings)
+
+    train_dataset, test_dataset = get_train_test_dataset(langfuse_client, settings)
+
+    logger.info("Агент создаётся")
+    agent = build_agent()
+
+    if settings.DRAW_AGENT_GRAPH is not None:
+        try:
+            agent.get_graph().draw_mermaid_png(output_file_path=settings.DRAW_AGENT_GRAPH, max_retries=3)
+        except:
+            logger.info("Не удалось сохранить изображение графа.")
+
+
+    logger.info("Агент запущен")
+    result = agent.invoke(
+        {
+            "repeat": settings.AGENT_REFINE_STEPS,
+            "current_step": 0,
+            "generation_prompt_client": generation_prompt_client,
+            "refine_prompt_client": refine_prompt_client,
+            "train_dataset_client": train_dataset,
+            "test_dataset_client": test_dataset,
+            "best_test_accuracy": best_test_accuracy,
+        }
+    )
+
+
 def accuracy(input: str, output: dict[str, Any], expected_output: dict[str, Any]):
     scores = []
-    bad_result: BadResult = {"generated_answers": {}, "reference_answers": {}}
+    bad_result: BadResult = {"generated_answers": {}, "reference_answers": {}}  
 
     for k, v in expected_output.items():
         if output[k] == v:
@@ -39,16 +79,18 @@ def accuracy(input: str, output: dict[str, Any], expected_output: dict[str, Any]
 def generate_train(state: State):
     prompt_client = state["generation_prompt_client"]
     current_step = state["current_step"]
-    train_dataset = state["train_dataset"]
+    train_dataset = state["train_dataset_client"]
     bad_results = []
+
+    run_date = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
 
     for item in tqdm(train_dataset.items[:10], desc="Generating training samples"):
         with langfuse_client.start_as_current_observation(
             name=f"generate-train-{current_step}", as_type="generation", prompt=prompt_client
         ):
-            with item.run(run_name=f"run-{current_step}") as span:
+            with item.run(run_name=f"run-{current_step}-{run_date}") as span:
                 input_prompt = prompt_client.compile(document=item.input)
-                output = structured_model.invoke(input=input_prompt, config={"callbacks": [callback_handler]})
+                output = generation_model.invoke(input=input_prompt, config={"callbacks": [callback_handler]})
                 accuracy_score, bad_result = accuracy(item.input, output.model_dump(), item.expected_output)
                 span.update_trace(input=input_prompt, output=output)
                 span.score_trace(name="accuracy", value=accuracy_score)
@@ -64,17 +106,20 @@ def generate_train(state: State):
 def generate_test(state: State):
     prompt_client = state["generation_prompt_client"]
     current_step = state["current_step"]
+    # TODO: при первом запуске лучшая точность неизвестна, пока её добавляю вручную при вызове агента
     best_test_accuracy = state.get("best_test_accuracy", 0)
-    test_dataset = state["test_dataset"]
+    test_dataset = state["test_dataset_client"]
     overall_accuracy = []
+
+    run_date = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
 
     for item in tqdm(test_dataset.items[:10], desc="Generating test samples"):
         with langfuse_client.start_as_current_observation(
             name=f"generate-test-{current_step}", as_type="generation", prompt=prompt_client
         ):
-            with item.run(run_name=f"run-{current_step}") as span:
+            with item.run(run_name=f"run-{current_step}-{run_date}") as span:
                 input_prompt = prompt_client.compile(document=item.input)
-                output = structured_model.invoke(input=input_prompt, config={"callbacks": [callback_handler]})
+                output = generation_model.invoke(input=input_prompt, config={"callbacks": [callback_handler]})
                 accuracy_score, _ = accuracy(item.input, output.model_dump(), item.expected_output)
                 overall_accuracy.append(accuracy_score)
                 span.update_trace(input=input_prompt, output=output)
@@ -84,10 +129,14 @@ def generate_test(state: State):
 
     overall_accuracy = sum(overall_accuracy) / len(overall_accuracy)
 
+    logger.info(f"{overall_accuracy=}, {best_test_accuracy=}")
+
     is_test_accuracy_improving = False
     if overall_accuracy > best_test_accuracy:
         best_test_accuracy = overall_accuracy
         is_test_accuracy_improving = True
+
+    logger.info(f"{is_test_accuracy_improving=}, {prompt_client.version=}")
 
     return {"best_test_accuracy": best_test_accuracy, "is_test_accuracy_improving": is_test_accuracy_improving}
 
@@ -135,20 +184,26 @@ def update_generation_prompt(state: State):
     current_step = state["current_step"]
     is_test_accuracy_improving = state["is_test_accuracy_improving"]
     generation_prompt_client = state["generation_prompt_client"]
-    best_generation_prompt_version = state.get("best_generation_prompt_version", 1)
 
     current_step += 1
     if is_test_accuracy_improving:
-        best_generation_prompt_version = generation_prompt_client.version
+        logger.info("Test accuracy is improving")
+        logger.info(f"Promoting generation prompt v{generation_prompt_client.version} to 'best'")
+        langfuse_client.update_prompt(
+            name=generation_prompt_client.name,
+            version=generation_prompt_client.version,
+            new_labels=["best"],
+        )
     else:
         generation_prompt_client = langfuse_client.get_prompt(
             name=generation_prompt_client.name,
-            version=best_generation_prompt_version,
+            label="best",
         )
-
+        logger.info("Test accuracy is not improving")
+        logger.info(f"Loaded 'best' generation prompt v{generation_prompt_client.version}")
+        
     return {
         "current_step": current_step,
-        "best_generation_prompt_version": best_generation_prompt_version,
         "generation_prompt_client": generation_prompt_client,
     }
 
@@ -188,29 +243,5 @@ def build_agent():
     return agent
 
 
-def main():
-    settings = Settings()
-
-    generation_prompt_client = get_generation_prompt_client(langfuse_client, settings)
-    refine_prompt_client = get_refine_prompt_client(langfuse_client, settings)
-
-    train_dataset, test_dataset = get_train_test_dataset(langfuse_client, settings)
-
-    agent = build_agent()
-
-    if settings.DRAW_AGENT_GRAPH is not None:
-        try:
-            agent.get_graph().draw_mermaid_png(output_file_path=settings.DRAW_AGENT_GRAPH, max_retries=3)
-        except:
-            print("Не удалось сохранить изображение графа.")
-
-    result = agent.invoke(
-        {
-            "repeat": 5,
-            "current_step": 0,
-            "generation_prompt_client": generation_prompt_client,
-            "refine_prompt_client": refine_prompt_client,
-            "train_dataset_client": train_dataset,
-            "test_dataset_client": test_dataset,
-        }
-    )
+if __name__ == "__main__":
+    main()

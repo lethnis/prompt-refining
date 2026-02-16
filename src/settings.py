@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     LANGFUSE_SECRET_KEY: str = Field(description="Секретный ключ доступа для Langfuse")
     LANGFUSE_PUBLIC_KEY: str = Field(description="Открытый ключ доступа для Langfuse")
     LANGFUSE_BASE_URL: str = Field(description="URL, где поднят Langfuse")
+
     LANGFUSE_GENERATION_PROMPT_NAME: str = Field(
         default="generation-prompt",
         description="Название промпта для маленькой модели",
@@ -57,6 +58,11 @@ class Settings(BaseSettings):
         default=None,
         description="Куда сохранить .png рисунок агента",
         examples=["agent_graph.png"],
+    )
+
+    AGENT_REFINE_STEPS: int = Field(
+        default=3,
+        description="Сколько раз выполнить цикл улучшения промпта"
     )
 
     model_config = SettingsConfigDict(
