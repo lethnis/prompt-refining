@@ -17,7 +17,7 @@ llm = ChatOpenAI(
 structured_model = ChatOpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     base_url=os.getenv("OPENAI_BASE_URL"),
-    model_name=os.getenv("OPENAI_STRUCTURED_MODEL"),
+    model_name=os.getenv("OPENAI_GENERATION_MODEL"),
     timeout=60,
     max_retries=3,
 )
