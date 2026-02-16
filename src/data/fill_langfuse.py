@@ -1,13 +1,18 @@
+from pathlib import Path
+
+from dotenv import load_dotenv
 from datasets import load_from_disk
 from langfuse import get_client
 from tqdm import tqdm
 
 from src.constants import ActInfo
 
+load_dotenv()
+
 if __name__ == "__main__":
 
     client = get_client()
-    dataset = load_from_disk("../data/raw")
+    dataset = load_from_disk(Path(__file__).parent.parent.parent / "data" / "raw")
     client.create_dataset(name="RusLawOD/train", expected_output_schema=ActInfo.model_json_schema())
     client.create_dataset(name="RusLawOD/test", expected_output_schema=ActInfo.model_json_schema())
 
