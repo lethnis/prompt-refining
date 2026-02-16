@@ -1,3 +1,14 @@
+## 0.1.1 (2026-02-16)
+
+### Fix
+
+- replaced best_generation_prompt_version with best label in langfuse, added code to find best prompt version and best score, added agent_refine_steps to settings, added logging
+- **data**: fix scripts usage as independent modules
+
+### Refactor
+
+- renamed structured model to generation model added with_structured_output to models
+
 ## 0.1.0 (2026-02-16)
 
 ### Feat
