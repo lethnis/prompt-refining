@@ -1,5 +1,6 @@
 from typing import Annotated, Any, TypedDict
 
+from langfuse._client.datasets import DatasetClient
 from langfuse.model import PromptClient
 from langgraph.graph.message import AnyMessage, add_messages
 from pydantic import BaseModel, Field
@@ -15,6 +16,11 @@ class ActInfo(BaseModel):
     government_agency_name: str | None = Field(default=None, description="Наименование государственного органа")
     signatory: str | None = Field(default=None, description="Официальное лицо, подписавшее акт")
     type: str | None = Field(default=None, description="Тип правового акта")
+
+
+class RefineResponse(BaseModel):
+    changes: str = Field(description="Какие были внесены изменения и почему")
+    new_prompt: str = Field(description="Улучшенная версия промпта")
 
 
 class BadResult(TypedDict):
@@ -33,11 +39,8 @@ class State(TypedDict):
     best_generation_prompt_version: int
     generation_prompt_client: PromptClient
     refine_prompt_client: PromptClient
-
-
-class RefineResponse(BaseModel):
-    changes: str = Field(description="Какие были внесены изменения и почему")
-    new_prompt: str = Field(description="Улучшенная версия промпта")
+    train_dataset_client: DatasetClient
+    test_dataset_client: DatasetClient
 
 
 GENERATION_PROMPT = "Извлеки данные из документа согласно заданной схеме.\n# Документ\n{{document}}\n"
