@@ -49,7 +49,7 @@ def get_generation_prompt_client(langfuse_client: Langfuse, settings: Settings) 
             "best",
             {"json_schema": ActInfo.model_json_schema()},
         )
-    logger.info(f"Промпт для маленькой модели {prompt_client.name} v{prompt_client.version}")
+    logger.info(f"Выбран промпт для маленькой модели {prompt_client.name} v{prompt_client.version}")
     return prompt_client
 
 
@@ -75,14 +75,14 @@ def get_refine_prompt_client(langfuse_client: Langfuse, settings: Settings) -> P
             "best",
             {"json_schema": RefineResponse.model_json_schema()},
         )
-    logger.info(f"Промпт для большой модели {prompt_client.name} v{prompt_client.version}")
+    logger.info(f"Выбран промпт для большой модели {prompt_client.name} v{prompt_client.version}")
     return prompt_client
 
 
 def get_train_test_dataset(langfuse_client: Langfuse, settings: Settings):
     train_dataset = langfuse_client.get_dataset(settings.LANGFUSE_TRAIN_DATASET_NAME)
     test_dataset = langfuse_client.get_dataset(settings.LANGFUSE_TEST_DATASET_NAME)
-    logger.info("train и test datasets загружены")
+    logger.info("train и test данные загружены")
     return train_dataset, test_dataset
 
 
@@ -121,5 +121,5 @@ async def get_dataset_scores(langfuse_client: Langfuse, dataset_name: str):
 async def get_best_generation_prompt_version(langfuse_client: Langfuse, dataset_name: str) -> tuple[int, float]:
     scores = await get_dataset_scores(langfuse_client, dataset_name)
     scores = sorted(scores, key=lambda x: x["score"], reverse=True)
-    logger.info(f"Best generation prompt is {scores[0]}")
+    logger.info(f"Найден лучший промпт: {scores[0]}")
     return int(scores[0]["prompt_version"]), scores[0]["score"]

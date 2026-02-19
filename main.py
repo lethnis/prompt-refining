@@ -40,6 +40,7 @@ def main():
     if settings.DRAW_AGENT_GRAPH is not None:
         try:
             agent.get_graph().draw_mermaid_png(output_file_path=settings.DRAW_AGENT_GRAPH, max_retries=3)
+            logger.info(f"Изображение графа сохранено 'settings.DRAW_AGENT_GRAPH'.")
         except:
             logger.info("Не удалось сохранить изображение графа.")
 
@@ -79,16 +80,17 @@ def accuracy(input: str, output: dict[str, Any], expected_output: dict[str, Any]
 def generate_train(state: State):
     prompt_client = state["generation_prompt_client"]
     current_step = state["current_step"]
+    repeat = state["repeat"]
     train_dataset = state["train_dataset_client"]
     bad_results = []
 
     run_date = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
 
-    for item in tqdm(train_dataset.items[:10], desc="Generating training samples"):
+    for item in tqdm(train_dataset.items[:10], desc=f"Обучение, цикл {current_step+1}/{repeat}"):
         with langfuse_client.start_as_current_observation(
             name=f"generate-train-{current_step}", as_type="generation", prompt=prompt_client
         ):
-            with item.run(run_name=f"run-{current_step}-{run_date}") as span:
+            with item.run(run_name=f"run-{run_date}") as span:
                 input_prompt = prompt_client.compile(document=item.input)
                 output = generation_model.invoke(input=input_prompt, config={"callbacks": [callback_handler]})
                 accuracy_score, bad_result = accuracy(item.input, output.model_dump(), item.expected_output)
@@ -106,6 +108,7 @@ def generate_train(state: State):
 def generate_test(state: State):
     prompt_client = state["generation_prompt_client"]
     current_step = state["current_step"]
+    repeat = state["repeat"]
     # TODO: при первом запуске лучшая точность неизвестна, пока её добавляю вручную при вызове агента
     best_test_accuracy = state.get("best_test_accuracy", 0)
     test_dataset = state["test_dataset_client"]
@@ -113,11 +116,11 @@ def generate_test(state: State):
 
     run_date = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
 
-    for item in tqdm(test_dataset.items[:10], desc="Generating test samples"):
+    for item in tqdm(test_dataset.items[:10], desc=f"Тестирование, цикл {current_step+1}/{repeat}"):
         with langfuse_client.start_as_current_observation(
             name=f"generate-test-{current_step}", as_type="generation", prompt=prompt_client
         ):
-            with item.run(run_name=f"run-{current_step}-{run_date}") as span:
+            with item.run(run_name=f"run-{run_date}") as span:
                 input_prompt = prompt_client.compile(document=item.input)
                 output = generation_model.invoke(input=input_prompt, config={"callbacks": [callback_handler]})
                 accuracy_score, _ = accuracy(item.input, output.model_dump(), item.expected_output)
@@ -129,14 +132,12 @@ def generate_test(state: State):
 
     overall_accuracy = sum(overall_accuracy) / len(overall_accuracy)
 
-    logger.info(f"{overall_accuracy=}, {best_test_accuracy=}")
+    logger.info(f"Точность на новом промпте: {overall_accuracy:.2f}, точность на лучшем промпте: {best_test_accuracy:.2f}")
 
     is_test_accuracy_improving = False
     if overall_accuracy > best_test_accuracy:
         best_test_accuracy = overall_accuracy
         is_test_accuracy_improving = True
-
-    logger.info(f"{is_test_accuracy_improving=}, {prompt_client.version=}")
 
     return {"best_test_accuracy": best_test_accuracy, "is_test_accuracy_improving": is_test_accuracy_improving}
 
@@ -158,6 +159,7 @@ def refine(state: State):
                 f"Поле для извлечения: {k}\nПравильный ответ: {reference}\nСгенерированный ответ: {generated}\n"
             )
 
+    logger.info("Генерируем новый промпт.")
     with langfuse_client.start_as_current_observation(
         name=f"refine-{current_step}", as_type="generation", prompt=refine_prompt_client
     ) as gen:
@@ -176,6 +178,7 @@ def refine(state: State):
         prompt=output["parsed"].new_prompt + "\n# Документ\n{{document}}",
         config=generation_prompt_client.config,
     )
+    logger.info(f"Создан промпт {new_generation_prompt_client.name} {new_generation_prompt_client.version}.")
 
     return {"messages": [output["raw"]], "generation_prompt_client": new_generation_prompt_client}
 
@@ -187,8 +190,8 @@ def update_generation_prompt(state: State):
 
     current_step += 1
     if is_test_accuracy_improving:
-        logger.info("Test accuracy is improving")
-        logger.info(f"Promoting generation prompt v{generation_prompt_client.version} to 'best'")
+        logger.info("Точность выросла")
+        logger.info(f"Промпт версии {generation_prompt_client.version} повышен до 'best'")
         langfuse_client.update_prompt(
             name=generation_prompt_client.name,
             version=generation_prompt_client.version,
@@ -199,8 +202,8 @@ def update_generation_prompt(state: State):
             name=generation_prompt_client.name,
             label="best",
         )
-        logger.info("Test accuracy is not improving")
-        logger.info(f"Loaded 'best' generation prompt v{generation_prompt_client.version}")
+        logger.info("Точность не выросла")
+        logger.info(f"Откат к предыдущему 'best' промпту с версией {generation_prompt_client.version}")
         
     return {
         "current_step": current_step,
